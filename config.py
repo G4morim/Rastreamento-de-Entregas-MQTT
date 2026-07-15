@@ -5,7 +5,15 @@ Configurações centrais do sistema de rastreamento de entregas via MQTT.
 
 Mantemos tudo em um único lugar para facilitar a troca de broker, ajuste de
 QoS e a estrutura de tópicos sem precisar mexer na lógica dos scripts.
+
+Vários parâmetros aceitam override por variável de ambiente (útil para trocar
+o broker ou ligar TLS sem editar este arquivo). Ex.:
+
+    MQTT_BROKER=localhost python entregador.py ENT-001
+    MQTT_TLS=1 python central_monitoramento.py
 """
+
+import os
 
 # ---------------------------------------------------------------------------
 # BROKER MQTT
@@ -15,9 +23,22 @@ QoS e a estrutura de tópicos sem precisar mexer na lógica dos scripts.
 #
 #   Público : "broker.hivemq.com"  ou  "test.mosquitto.org"
 #   Local   : "localhost"
-BROKER_HOST = "broker.hivemq.com"
-BROKER_PORT = 1883          # 1883 = MQTT sem TLS | 8883 = MQTT com TLS
+#
+# Cada valor tem um padrão sensato, mas pode ser sobrescrito via ambiente.
+BROKER_HOST = os.getenv("MQTT_BROKER", "broker.hivemq.com")
+BROKER_PORT = int(os.getenv("MQTT_PORT", "1883"))   # 1883 = sem TLS
+BROKER_PORT_TLS = int(os.getenv("MQTT_PORT_TLS", "8883"))  # 8883 = com TLS
 KEEPALIVE = 60              # segundos sem comunicação antes de enviar PINGREQ
+
+# Segurança: ligue TLS com MQTT_TLS=1. Requer que o broker aceite conexões
+# TLS na porta 8883 (o HiveMQ público aceita).
+USAR_TLS = os.getenv("MQTT_TLS", "0") == "1"
+
+
+def porta_efetiva() -> int:
+    """Retorna a porta a usar conforme TLS esteja ligado ou não."""
+    return BROKER_PORT_TLS if USAR_TLS else BROKER_PORT
+
 
 # ---------------------------------------------------------------------------
 # ESTRUTURA DE TÓPICOS
@@ -60,5 +81,12 @@ QOS_TELEMETRIA = 0
 # ---------------------------------------------------------------------------
 # PARÂMETROS DA SIMULAÇÃO
 # ---------------------------------------------------------------------------
-INTERVALO_ENVIO = 3        # segundos entre cada atualização de posição
+INTERVALO_ENVIO = int(os.getenv("MQTT_INTERVALO", "3"))  # seg. entre posições
 PUBLICAR_RETIDA_STATUS = True   # status fica "retido" no broker (retained)
+
+# ---------------------------------------------------------------------------
+# PAINEL DA CENTRAL
+# ---------------------------------------------------------------------------
+LIMIAR_BATERIA_BAIXA = 20   # abaixo disso, o painel destaca a bateria (alerta)
+TIMEOUT_OFFLINE = 15        # seg. sem mensagem -> entregador marcado "SEM SINAL"
+ARQUIVO_HISTORICO = "historico_entregas.csv"   # log de eventos da frota
