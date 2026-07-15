@@ -13,6 +13,7 @@ Uso:
 Deixe rodando e inicie um ou mais entregadores em outros terminais.
 """
 
+import csv
 import json
 import os
 import time
@@ -49,6 +50,26 @@ def colorir(texto: str, cor: str) -> str:
 
 def limpar_tela():
     os.system("cls" if os.name == "nt" else "clear")
+
+
+# ----------------------------- Histórico (CSV) -----------------------------
+def registrar_historico(id_ent: str, tipo: str, dados: dict):
+    """Faz append de um evento no CSV de histórico da frota (relatório)."""
+    resumo = {
+        config.TOPIC_LOCALIZACAO: lambda d: f"{d.get('lat')},{d.get('lon')}",
+        config.TOPIC_STATUS: lambda d: d.get("status", ""),
+        config.TOPIC_TELEMETRIA: lambda d: (
+            f"bat={d.get('bateria_pct')} vel={d.get('velocidade_kmh')} "
+            f"sinal={d.get('sinal_dbm')}"),
+    }.get(tipo, lambda d: json.dumps(d, ensure_ascii=False))(dados)
+
+    novo = not os.path.exists(config.ARQUIVO_HISTORICO)
+    with open(config.ARQUIVO_HISTORICO, "a", newline="", encoding="utf-8") as f:
+        escritor = csv.writer(f)
+        if novo:
+            escritor.writerow(["timestamp", "id", "tipo", "resumo"])
+        escritor.writerow([datetime.now().isoformat(timespec="seconds"),
+                           id_ent, tipo, resumo])
 
 
 LARGURA = 88
@@ -119,8 +140,26 @@ def desenhar_painel():
         print(f"{id_ent:<12}{status_cell}{pos:<24}{bat_cell}"
               f"{vel_cell}{sinal_cell}{atualizado_cell}")
 
+    desenhar_resumo(agora)
     print("=" * LARGURA)
     print(" Ctrl+C para encerrar.")
+
+
+def desenhar_resumo(agora: float):
+    """Rodapé com estatísticas consolidadas da frota."""
+    total = len(frota)
+    entregues = sum(1 for d in frota.values()
+                    if d.get("status") in ("entregue", "finalizado"))
+    offline = sum(1 for d in frota.values()
+                  if d.get("ultima_msg")
+                  and (agora - d["ultima_msg"]) > config.TIMEOUT_OFFLINE)
+    baterias = [d["bateria"] for d in frota.values()
+                if d.get("bateria") is not None]
+    media_bat = f"{sum(baterias) / len(baterias):.0f}%" if baterias else "—"
+
+    print("-" * LARGURA)
+    print(f" Frota: {total}   Entregues: {entregues}   "
+          f"Offline: {offline}   Bateria média: {media_bat}")
 
 
 # ----------------------------- Callbacks -----------------------------
@@ -149,6 +188,7 @@ def on_message(client, userdata, msg):
 
     registro = frota.setdefault(id_ent, {})
     registro["ultima_msg"] = time.time()
+    registrar_historico(id_ent, tipo, dados)
 
     if tipo == config.TOPIC_LOCALIZACAO:
         registro["pos"] = f"{dados['lat']:.4f}, {dados['lon']:.4f}"
