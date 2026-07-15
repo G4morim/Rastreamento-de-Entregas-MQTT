@@ -15,6 +15,7 @@ Deixe rodando e inicie um ou mais entregadores em outros terminais.
 
 import json
 import os
+import time
 from datetime import datetime
 
 import paho.mqtt.client as mqtt
@@ -24,36 +25,101 @@ import config
 # Estado em memória: { id_entregador: {dados consolidados} }
 frota = {}
 
+# ----------------------------- Cores ANSI -----------------------------
+RESET = "\033[0m"
+VERMELHO = "\033[31m"
+VERDE = "\033[32m"
+AMARELO = "\033[33m"
+CIANO = "\033[36m"
+CINZA = "\033[90m"
+
+
+def _habilitar_ansi():
+    """Habilita sequências ANSI no console do Windows 10+ (no-op em Unix)."""
+    if os.name == "nt":
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        # 7 = PROCESSED_OUTPUT | WRAP_AT_EOL | VIRTUAL_TERMINAL_PROCESSING
+        kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 7)
+
+
+def colorir(texto: str, cor: str) -> str:
+    return f"{cor}{texto}{RESET}"
+
 
 def limpar_tela():
     os.system("cls" if os.name == "nt" else "clear")
 
 
+LARGURA = 88
+
+
+def _cor_status(status: str, offline: bool) -> str:
+    if offline:
+        return VERMELHO
+    if status == "entregue" or status == "finalizado":
+        return VERDE
+    if status == "offline_inesperado":
+        return VERMELHO
+    if status in ("em_transito", "proximo_ao_destino", "saiu_para_entrega"):
+        return AMARELO
+    return CINZA
+
+
 def desenhar_painel():
     limpar_tela()
-    print("=" * 78)
+    print("=" * LARGURA)
     print(" CENTRAL DE MONITORAMENTO DE ENTREGAS  |  Protocolo: MQTT")
-    print(f" Broker: {config.BROKER_HOST}:{config.BROKER_PORT}"
+    print(f" Broker: {config.BROKER_HOST}:{config.porta_efetiva()}"
           f"   |   {datetime.now().strftime('%H:%M:%S')}")
-    print("=" * 78)
+    print("=" * LARGURA)
 
     if not frota:
         print("\n  Aguardando entregadores se conectarem...\n")
-        print("=" * 78)
+        print("=" * LARGURA)
         return
 
-    cabecalho = f"{'ENTREGADOR':<12}{'STATUS':<22}{'POSIÇÃO (lat, lon)':<26}{'BAT.':<6}"
+    cabecalho = (f"{'ENTREGADOR':<12}{'STATUS':<20}{'POSIÇÃO (lat, lon)':<24}"
+                 f"{'BAT.':<6}{'VEL':<6}{'SINAL':<8}{'ATUALIZADO':<12}")
     print(cabecalho)
-    print("-" * 78)
+    print("-" * LARGURA)
 
+    agora = time.time()
     for id_ent, dados in sorted(frota.items()):
-        status = dados.get("status", "—")
-        pos = dados.get("pos", "—")
-        bat = dados.get("bateria")
-        bat_str = f"{bat}%" if bat is not None else "—"
-        print(f"{id_ent:<12}{status:<22}{pos:<26}{bat_str:<6}")
+        ultima = dados.get("ultima_msg", 0)
+        offline = (agora - ultima) > config.TIMEOUT_OFFLINE if ultima else False
 
-    print("=" * 78)
+        status = dados.get("status", "—")
+        status_txt = "SEM SINAL" if offline else status
+        status_cell = colorir(f"{status_txt:<20}", _cor_status(status, offline))
+
+        pos = dados.get("pos", "—")
+
+        bat = dados.get("bateria")
+        if bat is None:
+            bat_cell = f"{'—':<6}"
+        elif bat < config.LIMIAR_BATERIA_BAIXA:
+            bat_cell = colorir(f"{str(bat) + '%!':<6}", VERMELHO)
+        else:
+            bat_cell = f"{str(bat) + '%':<6}"
+
+        vel = dados.get("velocidade")
+        vel_cell = f"{(str(vel) if vel is not None else '—'):<6}"
+        sinal = dados.get("sinal")
+        sinal_cell = f"{(str(sinal) + 'dBm' if sinal is not None else '—'):<8}"
+
+        if ultima:
+            seg = int(agora - ultima)
+            atualizado = f"{seg}s atrás"
+        else:
+            atualizado = "—"
+        atualizado_cell = colorir(f"{atualizado:<12}",
+                                  VERMELHO if offline else CINZA)
+
+        print(f"{id_ent:<12}{status_cell}{pos:<24}{bat_cell}"
+              f"{vel_cell}{sinal_cell}{atualizado_cell}")
+
+    print("=" * LARGURA)
     print(" Ctrl+C para encerrar.")
 
 
@@ -82,6 +148,7 @@ def on_message(client, userdata, msg):
     id_ent, tipo = partes[1], partes[2]
 
     registro = frota.setdefault(id_ent, {})
+    registro["ultima_msg"] = time.time()
 
     if tipo == config.TOPIC_LOCALIZACAO:
         registro["pos"] = f"{dados['lat']:.4f}, {dados['lon']:.4f}"
@@ -89,11 +156,12 @@ def on_message(client, userdata, msg):
         registro["status"] = dados.get("status", "—")
     elif tipo == config.TOPIC_TELEMETRIA:
         registro["bateria"] = dados.get("bateria_pct")
-
-    desenhar_painel()
+        registro["velocidade"] = dados.get("velocidade_kmh")
+        registro["sinal"] = dados.get("sinal_dbm")
 
 
 def main():
+    _habilitar_ansi()
     client = mqtt.Client(
         mqtt.CallbackAPIVersion.VERSION2,
         client_id="central-monitoramento",
@@ -101,13 +169,21 @@ def main():
     client.on_connect = on_connect
     client.on_message = on_message
 
-    client.connect(config.BROKER_HOST, config.BROKER_PORT, config.KEEPALIVE)
-    desenhar_painel()
+    if config.USAR_TLS:
+        client.tls_set()
+
+    client.connect(config.BROKER_HOST, config.porta_efetiva(), config.KEEPALIVE)
+    client.loop_start()   # rede em thread separada; o painel redesenha aqui
 
     try:
-        client.loop_forever()   # bloqueia e processa mensagens
+        # Redesenha 1x por segundo para manter "ATUALIZADO" e "SEM SINAL"
+        # corretos mesmo quando nenhuma mensagem nova chega.
+        while True:
+            desenhar_painel()
+            time.sleep(1)
     except KeyboardInterrupt:
         print("\nEncerrando central...")
+        client.loop_stop()
         client.disconnect()
 
 
