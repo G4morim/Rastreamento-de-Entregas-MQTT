@@ -1,0 +1,8 @@
+# Histórico gerado em tempo de execução pela central
+historico_entregas.csv
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/

@@ -100,14 +100,30 @@ pelo broker, organizado por **tópicos**.
   refletindo a preocupação com recursos limitados da IoT.
 - **Frota multi-cliente** — basta abrir vários terminais com IDs diferentes
   para simular dezenas de entregadores simultâneos (1, 10, 50... como no estudo).
-- **Painel de monitoramento ao vivo** — a central consolida e desenha uma
-  tabela atualizada a cada mensagem recebida.
+- **Painel de monitoramento ao vivo** — a central consolida a frota e redesenha
+  a tabela a cada segundo, com colunas de **velocidade**, **sinal (dBm)** e
+  **quando chegou a última mensagem** de cada entregador.
+- **Detecção de "SEM SINAL"** — se um entregador fica mais de `TIMEOUT_OFFLINE`
+  segundos sem publicar, a central o destaca como offline no painel.
+- **Alerta de bateria baixa** — bateria abaixo de `LIMIAR_BATERIA_BAIXA` aparece
+  destacada em vermelho (com `!`).
+- **Estatísticas da frota** — rodapé com total de entregadores, quantos já
+  entregaram, quantos estão offline e a bateria média.
+- **Histórico em CSV** — cada evento recebido é gravado em
+  `historico_entregas.csv` para relatório/análise posterior.
+- **Cores no terminal** — status colorido por etapa (ANSI, funciona também no
+  console do Windows 10+).
 - **QoS configurável por tipo de dado** — localização em QoS 0 (velocidade),
   status em QoS 1 (garantia de entrega).
 - **Mensagens retidas (retained)** — o último status de cada entregador fica
   guardado no broker; quem conecta depois já recebe o estado atual.
 - **Last Will & Testament (LWT)** — se um entregador cai sem avisar (perda de
   sinal, bateria), o broker publica automaticamente `offline_inesperado`.
+- **Reconexão automática** — se a rede cair, o entregador reconecta sozinho
+  (backoff de 1s a 30s) e reanuncia o status atual à central.
+- **TLS opcional** — conexão segura na porta 8883 ligando `MQTT_TLS=1`.
+- **Configuração por variável de ambiente** — troque broker, porta e intervalo
+  sem editar código (`MQTT_BROKER`, `MQTT_PORT`, `MQTT_INTERVALO`, `MQTT_TLS`).
 - **Encerramento limpo** — `Ctrl+C` desconecta o cliente de forma controlada.
 
 ---
@@ -203,6 +219,30 @@ para:
 BROKER_HOST = "localhost"
 ```
 
+### Variáveis de ambiente (sem editar `config.py`)
+
+Os principais parâmetros aceitam override por variável de ambiente, com o mesmo
+padrão do `config.py` como fallback:
+
+| Variável | Efeito | Padrão |
+|---|---|---|
+| `MQTT_BROKER` | Host do broker | `broker.hivemq.com` |
+| `MQTT_PORT` | Porta sem TLS | `1883` |
+| `MQTT_PORT_TLS` | Porta com TLS | `8883` |
+| `MQTT_TLS` | `1` liga TLS (usa a porta 8883) | `0` |
+| `MQTT_INTERVALO` | Segundos entre atualizações | `3` |
+
+```bash
+# Exemplo: broker local com intervalo de 1s
+MQTT_BROKER=localhost MQTT_INTERVALO=1 python entregador.py ENT-001
+
+# Exemplo: conexão segura via TLS
+MQTT_TLS=1 python central_monitoramento.py
+```
+
+Outros ajustes do painel ficam em `config.py`: `LIMIAR_BATERIA_BAIXA`,
+`TIMEOUT_OFFLINE` e `ARQUIVO_HISTORICO`.
+
 ---
 
 ## Como usar — passo a passo
@@ -246,11 +286,20 @@ Ela conecta, assina `entregas/#` e exibe o painel aguardando entregadores.
 ```bash
 python entregador.py ENT-001
 python entregador.py ENT-002 --intervalo 2
-python entregador.py ENT-003 --intervalo 1
+python entregador.py ENT-003 --broker localhost --repetir
 ```
 
 Cada um percorre a rota, evolui o status e envia telemetria. A central
-atualiza o painel automaticamente a cada mensagem.
+atualiza o painel automaticamente.
+
+Flags disponíveis no entregador:
+
+| Flag | Efeito |
+|---|---|
+| `--intervalo N` | Segundos entre atualizações |
+| `--broker HOST` | Sobrescreve o broker na hora |
+| `--porta N` | Sobrescreve a porta na hora |
+| `--repetir` | Ao concluir a entrega, reinicia a rota em loop (demonstrações) |
 
 ### Passo 4 — Encerre
 
@@ -276,17 +325,23 @@ Iniciando entregador ENT-001 (intervalo 1s). Ctrl+C para parar.
 **Painel da central:**
 
 ```
-==============================================================================
+========================================================================================
  CENTRAL DE MONITORAMENTO DE ENTREGAS  |  Protocolo: MQTT
  Broker: localhost:1883   |   12:34:56
-==============================================================================
-ENTREGADOR  STATUS                POSIÇÃO (lat, lon)        BAT.
-------------------------------------------------------------------------------
-ENT-001     entregue              -29.8004, -55.7765        56%
-ENT-002     em_transito           -29.7930, -55.7820        91%
-==============================================================================
+========================================================================================
+ENTREGADOR  STATUS              POSIÇÃO (lat, lon)      BAT.  VEL   SINAL   ATUALIZADO
+----------------------------------------------------------------------------------------
+ENT-001     entregue            -29.8004, -55.7765      56%   0     -63dBm  1s atrás
+ENT-002     em_transito         -29.7930, -55.7820      18%!  42    -71dBm  0s atrás
+ENT-003     SEM SINAL           -29.7895, -55.7854      74%   —     -80dBm  19s atrás
+----------------------------------------------------------------------------------------
+ Frota: 3   Entregues: 1   Offline: 1   Bateria média: 49%
+========================================================================================
  Ctrl+C para encerrar.
 ```
+
+No terminal, `entregue` aparece em verde, etapas em andamento em amarelo, e
+`SEM SINAL`/bateria baixa em vermelho.
 
 ---
 
@@ -298,6 +353,7 @@ rastreamento-entregas-mqtt/
 ├── entregador.py               # Publisher: simula um entregador IoT móvel
 ├── central_monitoramento.py    # Subscriber: painel ao vivo da frota
 ├── requirements.txt            # Dependência (paho-mqtt)
+├── historico_entregas.csv      # Gerado pela central: log de eventos da frota
 └── README.md                   # Este arquivo
 ```
 
@@ -323,10 +379,13 @@ rastreamento-entregas-mqtt/
 
 Alinhados às direções apontadas no estudo:
 
-- Adicionar **segurança**: TLS na porta 8883 e autenticação usuário/senha.
-- Testar a **resiliência em redes instáveis** (quedas e reconexões).
+- ✅ **Segurança (TLS)** — já disponível via `MQTT_TLS=1` (porta 8883). Falta
+  ainda a **autenticação** usuário/senha.
+- ✅ **Resiliência em redes instáveis** — reconexão automática com backoff já
+  implementada; falta um roteiro de testes de queda/reconexão.
+- ✅ **Persistência de histórico** — eventos já gravados em CSV
+  (`historico_entregas.csv`); evoluir para banco de dados e **dashboard web**.
 - Simular **cenários adversos** (falhas em ambientes urbanos, perda de sinal).
-- Persistir o histórico em banco de dados e expor um **dashboard web**.
 - Comparar, no mesmo cenário, as variantes HTTP e CoAP do estudo original.
 
 ---
