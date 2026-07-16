@@ -5,6 +5,7 @@ import types
 import pytest
 
 import config
+import historico
 import central_monitoramento as central
 
 
@@ -16,11 +17,13 @@ class FakeMsg:
 
 @pytest.fixture(autouse=True)
 def frota_limpa(tmp_path, monkeypatch):
-    """Zera o estado global e desvia o histórico para um arquivo temporário."""
+    """Zera o estado global e desvia o histórico para um banco temporário."""
     central.frota.clear()
-    monkeypatch.setattr(config, "ARQUIVO_HISTORICO",
-                        str(tmp_path / "hist.csv"))
+    monkeypatch.setattr(config, "ARQUIVO_DB", str(tmp_path / "hist.db"))
+    monkeypatch.setattr(config, "ARQUIVO_HISTORICO", str(tmp_path / "hist.csv"))
+    historico.reset()
     yield
+    historico.reset()
     central.frota.clear()
 
 

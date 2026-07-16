@@ -1,5 +1,11 @@
 # Histórico gerado em tempo de execução pela central
 historico_entregas.csv
+historico_entregas.db
+*.db
+_smoke.*
+
+# Testes
+.pytest_cache/
 
 # Python
 __pycache__/

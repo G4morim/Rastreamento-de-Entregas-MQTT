@@ -105,4 +105,10 @@ PUBLICAR_RETIDA_STATUS = True   # status fica "retido" no broker (retained)
 # ---------------------------------------------------------------------------
 LIMIAR_BATERIA_BAIXA = 20   # abaixo disso, o painel destaca a bateria (alerta)
 TIMEOUT_OFFLINE = 15        # seg. sem mensagem -> entregador marcado "SEM SINAL"
-ARQUIVO_HISTORICO = "historico_entregas.csv"   # log de eventos da frota
+
+# Persistência do histórico da frota.
+#   - SQLite (padrão): consultável depois com `python relatorio.py`.
+#   - CSV (opcional): ligue com MQTT_HIST_CSV=1 para também gerar um .csv.
+ARQUIVO_DB = os.getenv("MQTT_DB", "historico_entregas.db")   # banco SQLite
+ARQUIVO_HISTORICO = "historico_entregas.csv"   # export CSV opcional/relatório
+HISTORICO_CSV = os.getenv("MQTT_HIST_CSV", "0") == "1"

@@ -13,7 +13,6 @@ Uso:
 Deixe rodando e inicie um ou mais entregadores em outros terminais.
 """
 
-import csv
 import json
 import os
 import time
@@ -22,6 +21,7 @@ from datetime import datetime
 import paho.mqtt.client as mqtt
 
 import config
+import historico
 
 # Estado em memória: { id_entregador: {dados consolidados} }
 frota = {}
@@ -50,26 +50,6 @@ def colorir(texto: str, cor: str) -> str:
 
 def limpar_tela():
     os.system("cls" if os.name == "nt" else "clear")
-
-
-# ----------------------------- Histórico (CSV) -----------------------------
-def registrar_historico(id_ent: str, tipo: str, dados: dict):
-    """Faz append de um evento no CSV de histórico da frota (relatório)."""
-    resumo = {
-        config.TOPIC_LOCALIZACAO: lambda d: f"{d.get('lat')},{d.get('lon')}",
-        config.TOPIC_STATUS: lambda d: d.get("status", ""),
-        config.TOPIC_TELEMETRIA: lambda d: (
-            f"bat={d.get('bateria_pct')} vel={d.get('velocidade_kmh')} "
-            f"sinal={d.get('sinal_dbm')}"),
-    }.get(tipo, lambda d: json.dumps(d, ensure_ascii=False))(dados)
-
-    novo = not os.path.exists(config.ARQUIVO_HISTORICO)
-    with open(config.ARQUIVO_HISTORICO, "a", newline="", encoding="utf-8") as f:
-        escritor = csv.writer(f)
-        if novo:
-            escritor.writerow(["timestamp", "id", "tipo", "resumo"])
-        escritor.writerow([datetime.now().isoformat(timespec="seconds"),
-                           id_ent, tipo, resumo])
 
 
 LARGURA = 88
@@ -188,7 +168,7 @@ def on_message(client, userdata, msg):
 
     registro = frota.setdefault(id_ent, {})
     registro["ultima_msg"] = time.time()
-    registrar_historico(id_ent, tipo, dados)
+    historico.registrar(id_ent, tipo, dados)
 
     if tipo == config.TOPIC_LOCALIZACAO:
         registro["pos"] = f"{dados['lat']:.4f}, {dados['lon']:.4f}"

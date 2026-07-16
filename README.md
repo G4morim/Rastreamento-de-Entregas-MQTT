@@ -109,8 +109,10 @@ pelo broker, organizado por **tópicos**.
   destacada em vermelho (com `!`).
 - **Estatísticas da frota** — rodapé com total de entregadores, quantos já
   entregaram, quantos estão offline e a bateria média.
-- **Histórico em CSV** — cada evento recebido é gravado em
-  `historico_entregas.csv` para relatório/análise posterior.
+- **Histórico em SQLite + relatório** — cada evento recebido é gravado em
+  `historico_entregas.db` (banco SQLite) e pode ser consultado depois com
+  `python relatorio.py` (entregas concluídas, quedas, último status, export
+  CSV). Grave também em CSV ligando `MQTT_HIST_CSV=1`.
 - **Cores no terminal** — status colorido por etapa (ANSI, funciona também no
   console do Windows 10+).
 - **QoS configurável por tipo de dado** — localização em QoS 0 (velocidade),
@@ -233,6 +235,8 @@ padrão do `config.py` como fallback:
 | `MQTT_USER` | Usuário para autenticação no broker | *(anônimo)* |
 | `MQTT_PASS` | Senha para autenticação no broker | *(anônimo)* |
 | `MQTT_INTERVALO` | Segundos entre atualizações | `3` |
+| `MQTT_DB` | Caminho do banco SQLite de histórico | `historico_entregas.db` |
+| `MQTT_HIST_CSV` | `1` também grava histórico em CSV | `0` |
 
 ```bash
 # Exemplo: broker local com intervalo de 1s
@@ -354,8 +358,12 @@ rastreamento-entregas-mqtt/
 ├── config.py                   # Configurações: broker, tópicos, QoS, simulação
 ├── entregador.py               # Publisher: simula um entregador IoT móvel
 ├── central_monitoramento.py    # Subscriber: painel ao vivo da frota
+├── historico.py                # Persistência dos eventos em SQLite
+├── relatorio.py                # CLI de relatório sobre o histórico
 ├── requirements.txt            # Dependência (paho-mqtt)
-├── historico_entregas.csv      # Gerado pela central: log de eventos da frota
+├── requirements-dev.txt        # Dependências de desenvolvimento (pytest)
+├── tests/                      # Suíte de testes (pytest)
+├── historico_entregas.db       # Gerado pela central: banco SQLite da frota
 └── README.md                   # Este arquivo
 ```
 
@@ -385,8 +393,9 @@ Alinhados às direções apontadas no estudo:
   autenticação usuário/senha via `MQTT_USER`/`MQTT_PASS`.
 - ✅ **Resiliência em redes instáveis** — reconexão automática com backoff já
   implementada; falta um roteiro de testes de queda/reconexão.
-- ✅ **Persistência de histórico** — eventos já gravados em CSV
-  (`historico_entregas.csv`); evoluir para banco de dados e **dashboard web**.
+- ✅ **Persistência de histórico** — eventos gravados em **SQLite**
+  (`historico_entregas.db`) e consultáveis via `relatorio.py`; próximo passo é
+  um **dashboard web**.
 - Simular **cenários adversos** (falhas em ambientes urbanos, perda de sinal).
 - Comparar, no mesmo cenário, as variantes HTTP e CoAP do estudo original.
 
