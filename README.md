@@ -230,6 +230,8 @@ padrão do `config.py` como fallback:
 | `MQTT_PORT` | Porta sem TLS | `1883` |
 | `MQTT_PORT_TLS` | Porta com TLS | `8883` |
 | `MQTT_TLS` | `1` liga TLS (usa a porta 8883) | `0` |
+| `MQTT_USER` | Usuário para autenticação no broker | *(anônimo)* |
+| `MQTT_PASS` | Senha para autenticação no broker | *(anônimo)* |
 | `MQTT_INTERVALO` | Segundos entre atualizações | `3` |
 
 ```bash
@@ -379,8 +381,8 @@ rastreamento-entregas-mqtt/
 
 Alinhados às direções apontadas no estudo:
 
-- ✅ **Segurança (TLS)** — já disponível via `MQTT_TLS=1` (porta 8883). Falta
-  ainda a **autenticação** usuário/senha.
+- ✅ **Segurança (TLS + autenticação)** — TLS via `MQTT_TLS=1` (porta 8883) e
+  autenticação usuário/senha via `MQTT_USER`/`MQTT_PASS`.
 - ✅ **Resiliência em redes instáveis** — reconexão automática com backoff já
   implementada; falta um roteiro de testes de queda/reconexão.
 - ✅ **Persistência de histórico** — eventos já gravados em CSV

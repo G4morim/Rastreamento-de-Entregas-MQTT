@@ -34,10 +34,26 @@ KEEPALIVE = 60              # segundos sem comunicação antes de enviar PINGREQ
 # TLS na porta 8883 (o HiveMQ público aceita).
 USAR_TLS = os.getenv("MQTT_TLS", "0") == "1"
 
+# Autenticação usuário/senha. Deixe em branco para conectar anonimamente
+# (padrão dos brokers públicos). Em um broker com credenciais, defina:
+#   MQTT_USER=frota MQTT_PASS=segredo python central_monitoramento.py
+MQTT_USER = os.getenv("MQTT_USER", "") or None
+MQTT_PASS = os.getenv("MQTT_PASS", "") or None
+
 
 def porta_efetiva() -> int:
     """Retorna a porta a usar conforme TLS esteja ligado ou não."""
     return BROKER_PORT_TLS if USAR_TLS else BROKER_PORT
+
+
+def aplicar_credenciais(client) -> None:
+    """Configura usuário/senha no cliente MQTT, se definidos via ambiente.
+
+    Chamado antes de conectar tanto pelo entregador quanto pela central,
+    mantendo a lógica de autenticação em um só lugar.
+    """
+    if MQTT_USER is not None:
+        client.username_pw_set(MQTT_USER, MQTT_PASS)
 
 
 # ---------------------------------------------------------------------------

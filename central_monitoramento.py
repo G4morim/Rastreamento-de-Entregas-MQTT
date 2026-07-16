@@ -212,6 +212,9 @@ def main():
     if config.USAR_TLS:
         client.tls_set()
 
+    # Autenticação usuário/senha (se MQTT_USER/MQTT_PASS estiverem setados).
+    config.aplicar_credenciais(client)
+
     client.connect(config.BROKER_HOST, config.porta_efetiva(), config.KEEPALIVE)
     client.loop_start()   # rede em thread separada; o painel redesenha aqui
 

@@ -78,6 +78,9 @@ class Entregador:
         if config.USAR_TLS:
             self.client.tls_set()
 
+        # Autenticação usuário/senha (se MQTT_USER/MQTT_PASS estiverem setados).
+        config.aplicar_credenciais(self.client)
+
         # Last Will & Testament: se o entregador cair sem avisar (perda de
         # conexão, bateria acabou), o broker publica esta mensagem por ele.
         lwt = json.dumps({"id": self.id, "status": "offline_inesperado"})
