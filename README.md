@@ -133,6 +133,9 @@ pelo broker, organizado por **tópicos**.
   sinal, bateria), o broker publica automaticamente `offline_inesperado`.
 - **Reconexão automática** — se a rede cair, o entregador reconecta sozinho
   (backoff de 1s a 30s) e reanuncia o status atual à central.
+- **Simulação de cenários adversos** — com `--falhas`, o entregador injeta
+  perdas de sinal (para de publicar → central marca `SEM SINAL`) e quedas de
+  conexão (dispara o LWT e a reconexão automática), para testar a resiliência.
 - **TLS opcional** — conexão segura na porta 8883 ligando `MQTT_TLS=1`.
 - **Configuração por variável de ambiente** — troque broker, porta e intervalo
   sem editar código (`MQTT_BROKER`, `MQTT_PORT`, `MQTT_INTERVALO`, `MQTT_TLS`).
@@ -249,6 +252,7 @@ padrão do `config.py` como fallback:
 | `MQTT_INTERVALO` | Segundos entre atualizações | `3` |
 | `MQTT_DB` | Caminho do banco SQLite de histórico | `historico_entregas.db` |
 | `MQTT_HIST_CSV` | `1` também grava histórico em CSV | `0` |
+| `MQTT_PROB_FALHA` | Probabilidade de falha por ciclo com `--falhas` | `0.15` |
 
 ```bash
 # Exemplo: broker local com intervalo de 1s
@@ -319,6 +323,8 @@ Flags disponíveis no entregador:
 | `--porta N` | Sobrescreve a porta na hora |
 | `--repetir` | Ao concluir a entrega, reinicia a rota em loop (demonstrações) |
 | `--rota ARQUIVO.json` | Carrega a rota de um JSON em vez da rota embutida |
+| `--falhas` | Simula perdas de sinal e quedas de conexão (testa resiliência) |
+| `--prob-falha P` | Probabilidade de falha por ciclo (0..1) quando `--falhas` |
 
 ### Passo 4 — (Opcional) Envie comandos aos entregadores
 
@@ -421,12 +427,11 @@ Alinhados às direções apontadas no estudo:
 
 - ✅ **Segurança (TLS + autenticação)** — TLS via `MQTT_TLS=1` (porta 8883) e
   autenticação usuário/senha via `MQTT_USER`/`MQTT_PASS`.
-- ✅ **Resiliência em redes instáveis** — reconexão automática com backoff já
-  implementada; falta um roteiro de testes de queda/reconexão.
+- ✅ **Resiliência em redes instáveis** — reconexão automática com backoff e
+  simulação de cenários adversos (`--falhas`: perda de sinal e quedas).
 - ✅ **Persistência de histórico** — eventos gravados em **SQLite**
   (`historico_entregas.db`) e consultáveis via `relatorio.py`; próximo passo é
   um **dashboard web**.
-- Simular **cenários adversos** (falhas em ambientes urbanos, perda de sinal).
 - Comparar, no mesmo cenário, as variantes HTTP e CoAP do estudo original.
 
 ---

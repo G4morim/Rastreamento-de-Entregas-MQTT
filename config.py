@@ -114,6 +114,11 @@ QOS_TELEMETRIA = 0
 INTERVALO_ENVIO = int(os.getenv("MQTT_INTERVALO", "3"))  # seg. entre posições
 PUBLICAR_RETIDA_STATUS = True   # status fica "retido" no broker (retained)
 
+# Simulação de cenários adversos (ligada por --falhas no entregador).
+# A cada ciclo, com esta probabilidade, o entregador sofre uma falha:
+# perda de sinal (para de publicar) ou queda de conexão (dispara LWT).
+PROB_FALHA = float(os.getenv("MQTT_PROB_FALHA", "0.15"))
+
 # ---------------------------------------------------------------------------
 # PAINEL DA CENTRAL
 # ---------------------------------------------------------------------------

@@ -29,6 +29,9 @@ class FakeClient:
     def subscribe(self, topico, qos=0):
         self.subscricoes.append((topico, qos))
 
+    def socket(self):
+        return None   # sem socket real: _derrubar_conexao vira no-op
+
     # No-ops usados pelo ciclo de vida, irrelevantes nos testes
     def will_set(self, *a, **k):
         pass

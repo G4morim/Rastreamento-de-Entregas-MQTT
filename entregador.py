@@ -51,12 +51,15 @@ ROTA = [
 class Entregador:
     def __init__(self, id_entregador: str, intervalo: int,
                  broker: str = None, porta: int = None, repetir: bool = False,
-                 rota=None):
+                 rota=None, falhas: bool = False, prob_falha: float = None):
         self.id = id_entregador
         self.intervalo = intervalo
         self.broker = broker or config.BROKER_HOST
         self.porta = porta or config.porta_efetiva()
         self.repetir = repetir
+        self.falhas = falhas       # simula cenários adversos (--falhas)
+        self.prob_falha = prob_falha if prob_falha is not None else config.PROB_FALHA
+        self.ciclos_sem_sinal = 0  # >0 = em "perda de sinal" (não publica)
         self.bateria = random.randint(70, 100)
         self.indice_rota = 0
         self.indice_status = 0
@@ -239,6 +242,38 @@ class Entregador:
             qos=config.QOS_TELEMETRIA,
         )
 
+    # ----------------------------- Simulação de falhas -----------------------
+    def _talvez_falhar(self):
+        """Com probabilidade `prob_falha`, inicia uma falha (--falhas).
+
+        Dois tipos, sorteados: perda de sinal (o entregador simplesmente para
+        de publicar por alguns ciclos, e a central o marca como SEM SINAL) ou
+        queda de conexão (derruba o socket, disparando o LWT no broker e a
+        reconexão automática do paho).
+        """
+        if self.ciclos_sem_sinal > 0:
+            return
+        if random.random() >= self.prob_falha:
+            return
+
+        self.ciclos_sem_sinal = random.randint(2, 4)
+        if random.random() < 0.4:
+            print(f"[{self.id}] !! FALHA: queda de conexão "
+                  f"(dispara LWT + reconexão automática).")
+            self._derrubar_conexao()
+        else:
+            print(f"[{self.id}] !! FALHA: perda de sinal por "
+                  f"{self.ciclos_sem_sinal} ciclos.")
+
+    def _derrubar_conexao(self):
+        """Fecha o socket abruptamente para simular uma queda de rede real."""
+        sock = self.client.socket()
+        if sock is not None:
+            try:
+                sock.close()   # queda "suja": sem DISCONNECT -> broker publica LWT
+            except OSError:
+                pass
+
     # ----------------------------- Loop principal -----------------------------
     def iniciar(self):
         # connect_async + loop_start: a thread de rede cuida da conexão e das
@@ -253,6 +288,16 @@ class Entregador:
                 # Pausado por comando: mantém a conexão viva (para receber
                 # "retomar"), mas não avança a rota nem publica dados.
                 if self.pausado:
+                    time.sleep(self.intervalo)
+                    continue
+
+                # Cenários adversos: talvez inicie uma falha neste ciclo.
+                if self.falhas:
+                    self._talvez_falhar()
+
+                # Em "perda de sinal": consome um ciclo sem publicar nada.
+                if self.ciclos_sem_sinal > 0:
+                    self.ciclos_sem_sinal -= 1
                     time.sleep(self.intervalo)
                     continue
 
@@ -313,6 +358,13 @@ def main():
     parser.add_argument("--rota", default=None, metavar="ARQUIVO.json",
                         help="Carrega a rota de um arquivo JSON (lista de "
                              "[lat, lon] ou {lat, lon})")
+    parser.add_argument("--falhas", action="store_true",
+                        help="Simula cenários adversos: perda de sinal e "
+                             "quedas de conexão (testa reconexão e LWT)")
+    parser.add_argument("--prob-falha", type=float, default=None,
+                        metavar="P",
+                        help="Probabilidade de falha por ciclo (0..1); "
+                             f"padrão {config.PROB_FALHA}")
     args = parser.parse_args()
 
     rota = None
@@ -324,7 +376,8 @@ def main():
 
     entregador = Entregador(args.id, args.intervalo,
                             broker=args.broker, porta=args.porta,
-                            repetir=args.repetir, rota=rota)
+                            repetir=args.repetir, rota=rota,
+                            falhas=args.falhas, prob_falha=args.prob_falha)
 
     # Ctrl+C encerra de forma limpa
     def _sair(sig, frame):
@@ -333,7 +386,8 @@ def main():
 
     print(f"Iniciando entregador {args.id} "
           f"(intervalo {args.intervalo}s"
-          f"{', loop' if args.repetir else ''}). Ctrl+C para parar.\n")
+          f"{', loop' if args.repetir else ''}"
+          f"{', falhas' if args.falhas else ''}). Ctrl+C para parar.\n")
     entregador.iniciar()
 
 

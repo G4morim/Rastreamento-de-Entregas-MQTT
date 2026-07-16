@@ -106,3 +106,27 @@ def test_comando_desconhecido_nao_altera_estado(entregador):
     entregador._on_comando(None, None, FakeComandoMsg("xyz"))
     assert entregador.pausado is False
     assert entregador.rodando is True
+
+
+def test_falha_inicia_perda_de_sinal(entregador, monkeypatch):
+    entregador.falhas = True
+    entregador.prob_falha = 1.0            # força a falha
+    # random.random() controla: 1º sorteio (falha) e 2º (tipo: >=0.4 = perda sinal)
+    valores = iter([0.0, 0.9])
+    monkeypatch.setattr(ent.random, "random", lambda: next(valores))
+    monkeypatch.setattr(ent.random, "randint", lambda a, b: 3)
+    entregador._talvez_falhar()
+    assert entregador.ciclos_sem_sinal == 3
+
+
+def test_falha_nao_ocorre_com_prob_zero(entregador, monkeypatch):
+    entregador.falhas = True
+    entregador.prob_falha = 0.0
+    monkeypatch.setattr(ent.random, "random", lambda: 0.5)
+    entregador._talvez_falhar()
+    assert entregador.ciclos_sem_sinal == 0
+
+
+def test_derrubar_conexao_sem_socket_nao_quebra(entregador):
+    # FakeClient.socket() retorna None: deve ser no-op silencioso
+    entregador._derrubar_conexao()
