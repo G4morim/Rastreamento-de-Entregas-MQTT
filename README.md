@@ -101,8 +101,14 @@ pelo broker, organizado por **tópicos**.
 - **Frota multi-cliente** — basta abrir vários terminais com IDs diferentes
   para simular dezenas de entregadores simultâneos (1, 10, 50... como no estudo).
 - **Painel de monitoramento ao vivo** — a central consolida a frota e redesenha
-  a tabela a cada segundo, com colunas de **velocidade**, **sinal (dBm)** e
-  **quando chegou a última mensagem** de cada entregador.
+  a tabela a cada segundo, com colunas de **velocidade**, **sinal (dBm)**,
+  **distância percorrida**, **ETA** e **quando chegou a última mensagem** de
+  cada entregador.
+- **Distância e ETA** — cada entregador calcula a distância percorrida
+  (haversine) e um tempo estimado de chegada ao destino, publicados na
+  telemetria; a central mostra por entregador e a distância total da frota.
+- **Rota configurável por arquivo** — carregue uma rota real de um JSON com
+  `--rota rota.json` (ver `rota_exemplo.json`), em vez da rota embutida.
 - **Detecção de "SEM SINAL"** — se um entregador fica mais de `TIMEOUT_OFFLINE`
   segundos sem publicar, a central o destaca como offline no painel.
 - **Alerta de bateria baixa** — bateria abaixo de `LIMIAR_BATERIA_BAIXA` aparece
@@ -138,7 +144,7 @@ Hierarquia: `entregas/<id_entregador>/<tipo_de_dado>`
 |---|---|---|---|
 | `entregas/ENT-001/localizacao` | `{ lat, lon, timestamp }` | 0 | não |
 | `entregas/ENT-001/status` | `{ status, timestamp }` | 1 | sim |
-| `entregas/ENT-001/telemetria` | `{ bateria_pct, velocidade_kmh, sinal_dbm }` | 0 | não |
+| `entregas/ENT-001/telemetria` | `{ bateria_pct, velocidade_kmh, sinal_dbm, distancia_km, eta_min }` | 0 | não |
 
 A central usa o **coringa** `entregas/#` para receber tudo de todos os
 entregadores de uma só vez. Coringas disponíveis no MQTT:
@@ -306,6 +312,7 @@ Flags disponíveis no entregador:
 | `--broker HOST` | Sobrescreve o broker na hora |
 | `--porta N` | Sobrescreve a porta na hora |
 | `--repetir` | Ao concluir a entrega, reinicia a rota em loop (demonstrações) |
+| `--rota ARQUIVO.json` | Carrega a rota de um JSON em vez da rota embutida |
 
 ### Passo 4 — Encerre
 
@@ -331,18 +338,18 @@ Iniciando entregador ENT-001 (intervalo 1s). Ctrl+C para parar.
 **Painel da central:**
 
 ```
-========================================================================================
+================================================================================================
  CENTRAL DE MONITORAMENTO DE ENTREGAS  |  Protocolo: MQTT
  Broker: localhost:1883   |   12:34:56
-========================================================================================
-ENTREGADOR  STATUS              POSIÇÃO (lat, lon)      BAT.  VEL   SINAL   ATUALIZADO
-----------------------------------------------------------------------------------------
-ENT-001     entregue            -29.8004, -55.7765      56%   0     -63dBm  1s atrás
-ENT-002     em_transito         -29.7930, -55.7820      18%!  42    -71dBm  0s atrás
-ENT-003     SEM SINAL           -29.7895, -55.7854      74%   —     -80dBm  19s atrás
-----------------------------------------------------------------------------------------
- Frota: 3   Entregues: 1   Offline: 1   Bateria média: 49%
-========================================================================================
+================================================================================================
+ENTREGADOR STATUS              POSIÇÃO (lat, lon)  BAT.  VEL  SINAL   DIST    ETA     ATUALIZADO
+------------------------------------------------------------------------------------------------
+ENT-001    entregue            -29.8004, -55.7765  56%   0    -63dBm  3.2km   0min    1s atrás
+ENT-002    em_transito         -29.7930, -55.7820  18%!  42   -71dBm  1.8km   5min    0s atrás
+ENT-003    SEM SINAL           -29.7895, -55.7854  74%   30   -80dBm  2.1km   3min    19s atrás
+------------------------------------------------------------------------------------------------
+ Frota: 3   Entregues: 1   Offline: 1   Bateria média: 49%   Distância total: 7.2km
+================================================================================================
  Ctrl+C para encerrar.
 ```
 
@@ -360,6 +367,8 @@ rastreamento-entregas-mqtt/
 ├── central_monitoramento.py    # Subscriber: painel ao vivo da frota
 ├── historico.py                # Persistência dos eventos em SQLite
 ├── relatorio.py                # CLI de relatório sobre o histórico
+├── geo.py                      # Haversine e carga de rotas (distância/ETA)
+├── rota_exemplo.json           # Rota de exemplo para --rota
 ├── requirements.txt            # Dependência (paho-mqtt)
 ├── requirements-dev.txt        # Dependências de desenvolvimento (pytest)
 ├── tests/                      # Suíte de testes (pytest)

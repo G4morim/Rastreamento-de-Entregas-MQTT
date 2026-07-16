@@ -26,6 +26,7 @@ from datetime import datetime, timezone
 import paho.mqtt.client as mqtt
 
 import config
+import geo
 
 # Estados possíveis de uma entrega, em ordem de progressão
 FLUXO_STATUS = [
@@ -49,7 +50,8 @@ ROTA = [
 
 class Entregador:
     def __init__(self, id_entregador: str, intervalo: int,
-                 broker: str = None, porta: int = None, repetir: bool = False):
+                 broker: str = None, porta: int = None, repetir: bool = False,
+                 rota=None):
         self.id = id_entregador
         self.intervalo = intervalo
         self.broker = broker or config.BROKER_HOST
@@ -60,6 +62,13 @@ class Entregador:
         self.indice_status = 0
         self.rodando = True
         self.ja_conectou = False   # distingue 1ª conexão de reconexões
+
+        # Rota percorrida (padrão embutido ou carregada de arquivo) e métricas
+        # derivadas: distância percorrida e restante até o destino (haversine).
+        self.rota = rota or ROTA
+        self.dist_restante = geo.distancias_restantes(self.rota)
+        self.distancia_percorrida = 0.0
+        self.velocidade = 0
 
         # --- Cria o cliente MQTT (API de callbacks v2 do paho-mqtt) ---
         # client_id único evita que o broker derrube conexões duplicadas.
@@ -120,7 +129,7 @@ class Entregador:
         return datetime.now(timezone.utc).isoformat()
 
     def publica_localizacao(self):
-        lat, lon = ROTA[self.indice_rota]
+        lat, lon = self.rota[self.indice_rota]
         # Pequeno ruído para simular movimento real do GPS
         lat += random.uniform(-0.0003, 0.0003)
         lon += random.uniform(-0.0003, 0.0003)
@@ -137,8 +146,12 @@ class Entregador:
             qos=config.QOS_LOCALIZACAO,
         )
 
-        # Avança na rota (volta ao início quando chega ao fim)
-        self.indice_rota = (self.indice_rota + 1) % len(ROTA)
+        # Acumula a distância do segmento percorrido e avança na rota
+        # (volta ao início quando chega ao fim).
+        proximo = (self.indice_rota + 1) % len(self.rota)
+        self.distancia_percorrida += geo.haversine(
+            self.rota[self.indice_rota], self.rota[proximo])
+        self.indice_rota = proximo
 
     def publica_status(self):
         status = FLUXO_STATUS[self.indice_status]
@@ -157,11 +170,22 @@ class Entregador:
 
     def publica_telemetria(self):
         self.bateria = max(0, self.bateria - random.randint(0, 2))
+        self.velocidade = random.randint(0, 60)
+
+        # ETA aproximado até o destino: distância restante / velocidade atual.
+        restante = self.dist_restante[self.indice_rota]
+        if self.velocidade > 0:
+            eta_min = round(restante / self.velocidade * 60, 1)
+        else:
+            eta_min = None   # parado: ETA indeterminado
+
         payload = {
             "id": self.id,
             "bateria_pct": self.bateria,
-            "velocidade_kmh": random.randint(0, 60),
+            "velocidade_kmh": self.velocidade,
             "sinal_dbm": random.randint(-95, -55),
+            "distancia_km": round(self.distancia_percorrida, 2),
+            "eta_min": eta_min,
             "timestamp": self._timestamp(),
         }
         self.client.publish(
@@ -208,6 +232,7 @@ class Entregador:
         self.indice_status = 0
         self.indice_rota = 0
         self.bateria = random.randint(70, 100)
+        self.distancia_percorrida = 0.0
         self.publica_status()
 
     def _encerrar(self):
@@ -234,11 +259,21 @@ def main():
                         help="Porta do broker (sobrescreve config/env)")
     parser.add_argument("--repetir", action="store_true",
                         help="Ao concluir a entrega, reinicia a rota em loop")
+    parser.add_argument("--rota", default=None, metavar="ARQUIVO.json",
+                        help="Carrega a rota de um arquivo JSON (lista de "
+                             "[lat, lon] ou {lat, lon})")
     args = parser.parse_args()
+
+    rota = None
+    if args.rota:
+        try:
+            rota = geo.carregar_rota(args.rota)
+        except (OSError, ValueError, KeyError, json.JSONDecodeError) as e:
+            parser.error(f"não foi possível carregar a rota '{args.rota}': {e}")
 
     entregador = Entregador(args.id, args.intervalo,
                             broker=args.broker, porta=args.porta,
-                            repetir=args.repetir)
+                            repetir=args.repetir, rota=rota)
 
     # Ctrl+C encerra de forma limpa
     def _sair(sig, frame):

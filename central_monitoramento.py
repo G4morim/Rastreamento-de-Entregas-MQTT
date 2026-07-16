@@ -52,7 +52,7 @@ def limpar_tela():
     os.system("cls" if os.name == "nt" else "clear")
 
 
-LARGURA = 88
+LARGURA = 96
 
 
 def _cor_status(status: str, offline: bool) -> str:
@@ -80,8 +80,9 @@ def desenhar_painel():
         print("=" * LARGURA)
         return
 
-    cabecalho = (f"{'ENTREGADOR':<12}{'STATUS':<20}{'POSIÇÃO (lat, lon)':<24}"
-                 f"{'BAT.':<6}{'VEL':<6}{'SINAL':<8}{'ATUALIZADO':<12}")
+    cabecalho = (f"{'ENTREGADOR':<11}{'STATUS':<20}{'POSIÇÃO (lat, lon)':<20}"
+                 f"{'BAT.':<6}{'VEL':<5}{'SINAL':<8}{'DIST':<8}{'ETA':<8}"
+                 f"{'ATUALIZADO':<10}")
     print(cabecalho)
     print("-" * LARGURA)
 
@@ -105,20 +106,25 @@ def desenhar_painel():
             bat_cell = f"{str(bat) + '%':<6}"
 
         vel = dados.get("velocidade")
-        vel_cell = f"{(str(vel) if vel is not None else '—'):<6}"
+        vel_cell = f"{(str(vel) if vel is not None else '—'):<5}"
         sinal = dados.get("sinal")
         sinal_cell = f"{(str(sinal) + 'dBm' if sinal is not None else '—'):<8}"
+
+        dist = dados.get("distancia")
+        dist_cell = f"{(f'{dist:.1f}km' if dist is not None else '—'):<8}"
+        eta = dados.get("eta")
+        eta_cell = f"{(f'{eta:.0f}min' if eta is not None else '—'):<8}"
 
         if ultima:
             seg = int(agora - ultima)
             atualizado = f"{seg}s atrás"
         else:
             atualizado = "—"
-        atualizado_cell = colorir(f"{atualizado:<12}",
+        atualizado_cell = colorir(f"{atualizado:<10}",
                                   VERMELHO if offline else CINZA)
 
-        print(f"{id_ent:<12}{status_cell}{pos:<24}{bat_cell}"
-              f"{vel_cell}{sinal_cell}{atualizado_cell}")
+        print(f"{id_ent:<11}{status_cell}{pos:<20}{bat_cell}"
+              f"{vel_cell}{sinal_cell}{dist_cell}{eta_cell}{atualizado_cell}")
 
     desenhar_resumo(agora)
     print("=" * LARGURA)
@@ -136,10 +142,13 @@ def desenhar_resumo(agora: float):
     baterias = [d["bateria"] for d in frota.values()
                 if d.get("bateria") is not None]
     media_bat = f"{sum(baterias) / len(baterias):.0f}%" if baterias else "—"
+    dist_total = sum(d["distancia"] for d in frota.values()
+                     if d.get("distancia") is not None)
 
     print("-" * LARGURA)
     print(f" Frota: {total}   Entregues: {entregues}   "
-          f"Offline: {offline}   Bateria média: {media_bat}")
+          f"Offline: {offline}   Bateria média: {media_bat}   "
+          f"Distância total: {dist_total:.1f}km")
 
 
 # ----------------------------- Callbacks -----------------------------
@@ -178,6 +187,8 @@ def on_message(client, userdata, msg):
         registro["bateria"] = dados.get("bateria_pct")
         registro["velocidade"] = dados.get("velocidade_kmh")
         registro["sinal"] = dados.get("sinal_dbm")
+        registro["distancia"] = dados.get("distancia_km")
+        registro["eta"] = dados.get("eta_min")
 
 
 def main():

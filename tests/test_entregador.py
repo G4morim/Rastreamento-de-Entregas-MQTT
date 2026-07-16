@@ -50,3 +50,26 @@ def test_telemetria_bateria_nunca_negativa(entregador):
     ultimo = json.loads(entregador.client.publicacoes[-1][1])
     assert ultimo["bateria_pct"] >= 0
     assert -95 <= ultimo["sinal_dbm"] <= -55
+
+
+def test_telemetria_inclui_distancia_e_eta(entregador):
+    entregador.publica_telemetria()
+    dados = json.loads(entregador.client.publicacoes[-1][1])
+    assert "distancia_km" in dados
+    assert "eta_min" in dados                 # pode ser None se parado
+    assert dados["distancia_km"] >= 0
+
+
+def test_distancia_acumula_ao_andar(entregador):
+    for _ in range(len(ent.ROTA)):
+        entregador.publica_localizacao()
+    assert entregador.distancia_percorrida > 0
+
+
+def test_rota_customizada_e_usada():
+    rota = [(-29.78, -55.79), (-29.79, -55.78), (-29.80, -55.77)]
+    e = ent.Entregador("ENT-R", intervalo=1, rota=rota)
+    e.client = FakeClient()
+    assert e.rota == rota
+    assert len(e.dist_restante) == len(rota)
+    assert e.dist_restante[-1] == 0.0
