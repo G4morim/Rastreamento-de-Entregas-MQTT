@@ -109,6 +109,10 @@ pelo broker, organizado por **tópicos**.
   telemetria; a central mostra por entregador e a distância total da frota.
 - **Rota configurável por arquivo** — carregue uma rota real de um JSON com
   `--rota rota.json` (ver `rota_exemplo.json`), em vez da rota embutida.
+- **Comandos da central para o entregador** — MQTT no sentido inverso: a
+  central publica em `entregas/<id>/comando` e o entregador reage
+  (`pausar`, `retomar`, `reportar`, `encerrar`), individualmente ou em
+  broadcast para toda a frota (`python comandar.py --todos pausar`).
 - **Detecção de "SEM SINAL"** — se um entregador fica mais de `TIMEOUT_OFFLINE`
   segundos sem publicar, a central o destaca como offline no painel.
 - **Alerta de bateria baixa** — bateria abaixo de `LIMIAR_BATERIA_BAIXA` aparece
@@ -145,6 +149,7 @@ Hierarquia: `entregas/<id_entregador>/<tipo_de_dado>`
 | `entregas/ENT-001/localizacao` | `{ lat, lon, timestamp }` | 0 | não |
 | `entregas/ENT-001/status` | `{ status, timestamp }` | 1 | sim |
 | `entregas/ENT-001/telemetria` | `{ bateria_pct, velocidade_kmh, sinal_dbm, distancia_km, eta_min }` | 0 | não |
+| `entregas/ENT-001/comando` | `{ comando }` (central → entregador) | 1 | não |
 
 A central usa o **coringa** `entregas/#` para receber tudo de todos os
 entregadores de uma só vez. Coringas disponíveis no MQTT:
@@ -170,6 +175,7 @@ Exemplo de payload de localização:
 | Conceito | Onde aparece no projeto |
 |---|---|
 | **Publish/Subscribe** | Entregadores publicam, central assina — desacoplados pelo broker |
+| **Pub/Sub bidirecional** | Central publica em `.../comando`; o entregador assina e reage |
 | **Tópicos hierárquicos** | `entregas/<id>/<tipo>` |
 | **QoS 0 / 1** | `config.py`: localização (0) vs. status (1) |
 | **Retained message** | Último status guardado no broker (`retain=True`) |
@@ -314,7 +320,21 @@ Flags disponíveis no entregador:
 | `--repetir` | Ao concluir a entrega, reinicia a rota em loop (demonstrações) |
 | `--rota ARQUIVO.json` | Carrega a rota de um JSON em vez da rota embutida |
 
-### Passo 4 — Encerre
+### Passo 4 — (Opcional) Envie comandos aos entregadores
+
+A central pode comandar a frota pelo MQTT no sentido inverso:
+
+```bash
+python comandar.py ENT-001 pausar     # congela um entregador
+python comandar.py ENT-001 retomar    # volta a andar
+python comandar.py ENT-002 reportar   # força reenvio de status/telemetria
+python comandar.py ENT-003 encerrar   # desliga o entregador
+python comandar.py --todos pausar     # broadcast para toda a frota
+```
+
+O entregador pausado aparece em ciano no painel como `pausado`.
+
+### Passo 5 — Encerre
 
 `Ctrl+C` em qualquer terminal encerra aquele processo de forma limpa.
 
@@ -368,6 +388,7 @@ rastreamento-entregas-mqtt/
 ├── historico.py                # Persistência dos eventos em SQLite
 ├── relatorio.py                # CLI de relatório sobre o histórico
 ├── geo.py                      # Haversine e carga de rotas (distância/ETA)
+├── comandar.py                 # CLI: central envia comandos ao entregador
 ├── rota_exemplo.json           # Rota de exemplo para --rota
 ├── requirements.txt            # Dependência (paho-mqtt)
 ├── requirements-dev.txt        # Dependências de desenvolvimento (pytest)

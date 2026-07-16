@@ -61,6 +61,7 @@ class Entregador:
         self.indice_rota = 0
         self.indice_status = 0
         self.rodando = True
+        self.pausado = False       # comando "pausar" congela a simulação
         self.ja_conectou = False   # distingue 1ª conexão de reconexões
 
         # Rota percorrida (padrão embutido ou carregada de arquivo) e métricas
@@ -78,6 +79,7 @@ class Entregador:
         )
         self.client.on_connect = self._on_connect
         self.client.on_disconnect = self._on_disconnect
+        self.client.on_message = self._on_comando   # comandos da central
 
         # Resiliência: se a conexão cair, o paho tenta reconectar sozinho,
         # com backoff exponencial entre 1s e 30s.
@@ -110,12 +112,51 @@ class Entregador:
                 print(f"[{self.id}] Conectado ao broker "
                       f"{self.broker}:{self.porta}")
                 self.ja_conectou = True
+            # Assina os comandos vindos da central: os do próprio entregador
+            # e os de broadcast (enviados a todos de uma vez).
+            self.client.subscribe(config.topico_comando(self.id),
+                                   qos=config.QOS_STATUS)
+            self.client.subscribe(config.topico_comando_broadcast(),
+                                   qos=config.QOS_STATUS)
             # (Re)anuncia o status atual: em uma primeira conexão anuncia
             # "saiu_para_entrega"; após uma queda, garante que a central
             # reflita imediatamente a etapa corrente da entrega.
             self.publica_status()
         else:
             print(f"[{self.id}] Falha na conexão. Código: {reason_code}")
+
+    def _on_comando(self, client, userdata, msg):
+        """Reage a comandos enviados pela central (sentido central -> entregador).
+
+        Aceita payload JSON `{"comando": "pausar"}` ou texto simples `pausar`.
+        Comandos: pausar, retomar, reportar, encerrar.
+        """
+        bruto = msg.payload.decode(errors="ignore").strip()
+        try:
+            comando = json.loads(bruto).get("comando", "")
+        except json.JSONDecodeError:
+            comando = bruto
+        comando = comando.lower()
+
+        if comando == "pausar":
+            if not self.pausado:
+                self.pausado = True
+                print(f"[{self.id}] << comando: PAUSAR")
+                self._publica_status_texto("pausado")
+        elif comando == "retomar":
+            if self.pausado:
+                self.pausado = False
+                print(f"[{self.id}] << comando: RETOMAR")
+                self.publica_status()   # reanuncia a etapa real da entrega
+        elif comando == "reportar":
+            print(f"[{self.id}] << comando: REPORTAR")
+            self.publica_status()
+            self.publica_telemetria()
+        elif comando == "encerrar":
+            print(f"[{self.id}] << comando: ENCERRAR")
+            self.rodando = False
+        else:
+            print(f"[{self.id}] << comando desconhecido: {comando!r}")
 
     def _on_disconnect(self, client, userdata, flags, reason_code, properties):
         if reason_code != 0:
@@ -154,7 +195,11 @@ class Entregador:
         self.indice_rota = proximo
 
     def publica_status(self):
-        status = FLUXO_STATUS[self.indice_status]
+        """Publica a etapa atual da entrega (fluxo de negócio)."""
+        self._publica_status_texto(FLUXO_STATUS[self.indice_status])
+
+    def _publica_status_texto(self, status: str):
+        """Publica um status arbitrário (etapa da entrega ou 'pausado')."""
         payload = {
             "id": self.id,
             "status": status,
@@ -205,6 +250,12 @@ class Entregador:
         ciclos = 0
         try:
             while self.rodando:
+                # Pausado por comando: mantém a conexão viva (para receber
+                # "retomar"), mas não avança a rota nem publica dados.
+                if self.pausado:
+                    time.sleep(self.intervalo)
+                    continue
+
                 self.publica_localizacao()
                 self.publica_telemetria()
 

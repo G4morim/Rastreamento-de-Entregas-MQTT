@@ -62,6 +62,8 @@ def _cor_status(status: str, offline: bool) -> str:
         return VERDE
     if status == "offline_inesperado":
         return VERMELHO
+    if status == "pausado":
+        return CIANO
     if status in ("em_transito", "proximo_ao_destino", "saiu_para_entrega"):
         return AMARELO
     return CINZA
@@ -174,6 +176,11 @@ def on_message(client, userdata, msg):
     if len(partes) < 3:
         return
     id_ent, tipo = partes[1], partes[2]
+
+    # A central também "ouve" os comandos que ela mesma envia (assina
+    # entregas/#). Ignora-os para não poluir o painel nem o histórico.
+    if tipo == config.TOPIC_COMANDO:
+        return
 
     registro = frota.setdefault(id_ent, {})
     registro["ultima_msg"] = time.time()

@@ -73,3 +73,36 @@ def test_rota_customizada_e_usada():
     assert e.rota == rota
     assert len(e.dist_restante) == len(rota)
     assert e.dist_restante[-1] == 0.0
+
+
+class FakeComandoMsg:
+    def __init__(self, comando, json_wrap=True):
+        corpo = json.dumps({"comando": comando}) if json_wrap else comando
+        self.payload = corpo.encode()
+
+
+def test_comando_pausar_e_retomar(entregador):
+    entregador._on_comando(None, None, FakeComandoMsg("pausar"))
+    assert entregador.pausado is True
+    # publicou status "pausado"
+    assert json.loads(entregador.client.publicacoes[-1][1])["status"] == "pausado"
+
+    entregador._on_comando(None, None, FakeComandoMsg("retomar"))
+    assert entregador.pausado is False
+
+
+def test_comando_encerrar_para_o_loop(entregador):
+    assert entregador.rodando is True
+    entregador._on_comando(None, None, FakeComandoMsg("encerrar"))
+    assert entregador.rodando is False
+
+
+def test_comando_aceita_texto_simples(entregador):
+    entregador._on_comando(None, None, FakeComandoMsg("pausar", json_wrap=False))
+    assert entregador.pausado is True
+
+
+def test_comando_desconhecido_nao_altera_estado(entregador):
+    entregador._on_comando(None, None, FakeComandoMsg("xyz"))
+    assert entregador.pausado is False
+    assert entregador.rodando is True

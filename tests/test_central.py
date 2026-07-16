@@ -64,6 +64,13 @@ def test_on_message_ignora_topico_curto():
     assert central.frota == {}
 
 
+def test_on_message_ignora_comando():
+    # Comandos (que a central também recebe via entregas/#) não entram na frota.
+    _entregar("entregas/todos/comando", {"comando": "pausar"})
+    _entregar("entregas/ENT-001/comando", {"comando": "reportar"})
+    assert central.frota == {}
+
+
 @pytest.mark.parametrize("status,offline,esperado", [
     ("entregue", False, central.VERDE),
     ("finalizado", False, central.VERDE),

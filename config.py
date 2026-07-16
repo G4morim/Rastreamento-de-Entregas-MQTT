@@ -71,6 +71,10 @@ TOPIC_BASE = "entregas"
 TOPIC_LOCALIZACAO = "localizacao"
 TOPIC_STATUS = "status"
 TOPIC_TELEMETRIA = "telemetria"
+TOPIC_COMANDO = "comando"       # central -> entregador (sentido inverso)
+
+# "id" reservado para comandos enviados a TODOS os entregadores de uma vez.
+ID_BROADCAST = "todos"
 
 # Coringa que a central usa para escutar todos os entregadores e todos os dados
 TOPIC_WILDCARD = f"{TOPIC_BASE}/#"
@@ -79,6 +83,16 @@ TOPIC_WILDCARD = f"{TOPIC_BASE}/#"
 def topico(id_entregador: str, tipo: str) -> str:
     """Monta um tópico completo: entregas/<id>/<tipo>."""
     return f"{TOPIC_BASE}/{id_entregador}/{tipo}"
+
+
+def topico_comando(id_entregador: str) -> str:
+    """Tópico de comando de um entregador específico."""
+    return topico(id_entregador, TOPIC_COMANDO)
+
+
+def topico_comando_broadcast() -> str:
+    """Tópico de comando ouvido por TODOS os entregadores."""
+    return topico(ID_BROADCAST, TOPIC_COMANDO)
 
 
 # ---------------------------------------------------------------------------
